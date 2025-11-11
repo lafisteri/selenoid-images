@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: $0 chrome -b <chrome-deb> -d <driver-ver> -t <tag> [chrome|vnc_chrome] [--platform linux/amd64]"
+  echo "Example: $0 chrome -b 142.0.7444.61-1 -d 142.0.7444.61 -t lafisteri/vnc_chrome:142.0 vnc_chrome --platform linux/amd64"
+  exit 1
+}
+
+[ $# -ge 1 ] || usage
+cmd="${1}"; shift
+[ "$cmd" = "chrome" ] || usage
+
+CHROME_DEB=""; DRIVER=""; TAG=""; FLAVOR="chrome"; PLATFORM=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -b) CHROME_DEB="${2:-}"; shift 2 ;;
+    -d) DRIVER="${2:-}"; shift 2 ;;
+    -t) TAG="${2:-}"; shift 2 ;;
+    chrome|vnc|vnc_chrome) FLAVOR="$1"; shift ;;
+    --platform) PLATFORM="--platform ${2:-}"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+[ -n "$CHROME_DEB" ] && [ -n "$DRIVER" ] && [ -n "$TAG" ] || usage
+
+# chrome 142.0.7444.61-1 -> APT-паттерн 142.*
+APT_PATTERN="$(echo "$CHROME_DEB" | cut -d. -f1).*"
+
+ENABLE_VNC=0
+[[ "$FLAVOR" =~ ^(vnc|vnc_chrome)$ ]] && ENABLE_VNC=1
+
+# autodetect Dockerfile name
+DOCKERFILE="Dockerfile.chrome"
+[ -f "$DOCKERFILE" ] || DOCKERFILE="Dockerfile"
+[ -f "$DOCKERFILE" ] || { echo "No Dockerfile found (Dockerfile or Dockerfile.chrome)"; exit 1; }
+
+echo "Building $FLAVOR -> $TAG using $DOCKERFILE"
+docker build ${PLATFORM} \
+  -f "$DOCKERFILE" \
+  --build-arg CHROME_VERSION="$CHROME_DEB" \
+  --build-arg CHROME_APT_PATTERN="$APT_PATTERN" \
+  --build-arg DRIVER_VERSION="$DRIVER" \
+  --build-arg ENABLE_VNC="$ENABLE_VNC" \
+  -t "$TAG" .
