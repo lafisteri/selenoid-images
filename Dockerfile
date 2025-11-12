@@ -1,11 +1,25 @@
-# Универсальный Dockerfile: собирает и обычный chrome, и vnc_chrome по флагу ENABLE_VNC
+ARG CHROME_VERSION
+ARG CHROME_APT_PATTERN=""
+ARG DRIVER_VERSION
+ARG ENABLE_VNC=0
+
+FROM golang:1.22-bullseye AS devtools-builder
+
+WORKDIR /src/devtools
+
+COPY devtools/go.mod .
+COPY devtools/go.sum .
+COPY devtools/*.go .
+
+ENV GOPROXY=https://proxy.golang.org,direct \
+    GO111MODULE=on
+
+RUN go mod tidy -e && \
+    go mod verify && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/devtools
+
 FROM debian:bullseye-slim
 
-# --- build args ---
-# CHROME_VERSION: точная версия deb-пакета, например 142.0.7444.61-1
-# CHROME_APT_PATTERN: паттерн для apt (например 142.*). Если найдётся — ставим из APT; иначе качаем .deb.
-# DRIVER_VERSION: версия chromedriver, например 142.0.7444.61
-# ENABLE_VNC: 0 (по умолчанию) или 1 — включить x11vnc/fluxbox/noVNC
 ARG CHROME_VERSION
 ARG CHROME_APT_PATTERN=""
 ARG DRIVER_VERSION
@@ -21,7 +35,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CHROMEDRIVER=/usr/bin/chromedriver \
     DBUS_SESSION_BUS_ADDRESS=/dev/null
 
-# Базовые пакеты, локали, шрифты
+# Базовые пакеты, локали, шрифты, dumb-init, Xvfb и утилиты
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -32,7 +46,9 @@ RUN set -eux; \
     locale-gen; \
     rm -rf /var/lib/apt/lists/*
 
-# Chrome: сначала пытаемся через APT по паттерну (например 142.*), иначе — точный .deb из pool
+# -------------------------
+# Google Chrome: APT по паттерну или точный .deb
+# -------------------------
 RUN set -eux; \
     curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-linux.gpg; \
     echo "deb [signed-by=/usr/share/keyrings/google-linux.gpg arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
@@ -53,14 +69,42 @@ RUN set -eux; \
     fi; \
     rm -rf /var/lib/apt/lists/*
 
-# Установка chromedriver
-COPY scripts/install-chromedriver.sh /usr/local/bin/install-chromedriver
-RUN chmod +x /usr/local/bin/install-chromedriver && /usr/local/bin/install-chromedriver "${DRIVER_VERSION}"
+# -------------------------
+# Chromedriver из Chrome-for-Testing:
+# - если передан DRIVER_VERSION -> ставим её (точное совпадение)
+# - иначе подбираем последнюю known-good в той же MAJOR-ветке Chrome
+# -------------------------
+RUN set -eux; \
+    CHROME_VERSION="$(google-chrome --version | awk '{print $3}')" ; \
+    CHROME_MAJOR="${CHROME_VERSION%%.*}" ; \
+    curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json -o /tmp/versions.json; \
+    if [ -n "${DRIVER_VERSION}" ]; then \
+    echo "Using requested DRIVER_VERSION=${DRIVER_VERSION}"; \
+    DRIVER_URL="$(jq -r --arg v "${DRIVER_VERSION}" \
+    '.versions[] | select(.version==$v) | .downloads.chromedriver[] | select(.platform=="linux64") | .url' \
+    /tmp/versions.json)"; \
+    test -n "$DRIVER_URL"; \
+    else \
+    echo "Picking latest known-good for MAJOR=${CHROME_MAJOR}"; \
+    DRIVER_VERSION="$(jq -r --arg m "$CHROME_MAJOR" \
+    '.versions | map(select(.version | startswith($m+"."))) | map(.version) | last' \
+    /tmp/versions.json)"; \
+    test -n "$DRIVER_VERSION"; \
+    DRIVER_URL="$(jq -r --arg v "$DRIVER_VERSION" \
+    '.versions[] | select(.version==$v) | .downloads.chromedriver[] | select(.platform=="linux64") | .url' \
+    /tmp/versions.json)"; \
+    fi; \
+    curl -fsSL -o /tmp/chromedriver.zip "$DRIVER_URL"; \
+    unzip -q /tmp/chromedriver.zip -d /tmp; \
+    install -m 0755 /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver; \
+    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64 /tmp/versions.json
 
-# (опционально) Корпоративные политики — раскомментируйте, если файл есть в репо
+# (опционально) Корпоративные политики
 # COPY static/policies.json /etc/opt/chrome/policies/managed/policies.json
 
-# VNC-стек ставим только при ENABLE_VNC=1
+# -------------------------
+# VNC-стек (только если ENABLE_VNC=1)
+# -------------------------
 RUN set -eux; \
     if [ "$ENABLE_VNC" = "1" ]; then \
     apt-get update; \
@@ -68,16 +112,35 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Пользователь
+# -------------------------
+# Копируем devtools-бинарь
+# -------------------------
+COPY --from=devtools-builder /out/devtools /usr/local/bin/devtools
+
+# Пользователь (как в старом)
 RUN useradd -m -s /bin/bash selenium && chown -R selenium:selenium /home/selenium /etc/opt/chrome || true
 
-# Скрипты запуска
+# Скрипты (как в старом)
 COPY scripts/entrypoint.sh /entrypoint.sh
 COPY scripts/xvfb-start.sh /usr/local/bin/xvfb-start
 RUN chmod +x /entrypoint.sh /usr/local/bin/xvfb-start
 
+# -------------------------
+# Обёртка: стартуем devtools и затем ваш entrypoint.sh
+# -------------------------
+RUN cat >/usr/local/bin/start-with-devtools.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+/usr/local/bin/devtools -listen :7070 &
+exec /entrypoint.sh
+EOF
+RUN chmod +x /usr/local/bin/start-with-devtools.sh
+
 USER selenium
-EXPOSE 4444 5900 7900
+
+EXPOSE 4444 5900 7900 7070
+
 HEALTHCHECK --interval=20s --timeout=3s --retries=3 CMD curl -fsS http://127.0.0.1:4444/status || exit 1
+
 ENTRYPOINT ["/usr/bin/dumb-init","--"]
-CMD ["/entrypoint.sh"]
+CMD ["/usr/local/bin/start-with-devtools.sh"]

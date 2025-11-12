@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Если есть VNC-стек — поднимем Xvfb/fluxbox/x11vnc
 if command -v xvfb-start >/dev/null 2>&1; then
   /usr/local/bin/xvfb-start &
 fi
+
+/usr/local/bin/devtools -listen :7070 &
 
 /usr/bin/chromedriver \
   --port=4444 \
