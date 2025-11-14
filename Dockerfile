@@ -2,6 +2,8 @@ ARG CHROME_VERSION
 ARG CHROME_APT_PATTERN=""
 ARG DRIVER_VERSION
 ARG ENABLE_VNC=0
+ARG LOCALE="en_US.UTF-8"
+ARG TZ="UTC"
 
 FROM golang:1.22-bullseye AS devtools-builder
 
@@ -24,31 +26,33 @@ ARG CHROME_VERSION
 ARG CHROME_APT_PATTERN=""
 ARG DRIVER_VERSION
 ARG ENABLE_VNC=0
+ARG LOCALE="en_US.UTF-8"
+ARG TZ="UTC"
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=Europe/Kyiv \
-    LANG=ru_UA.UTF-8 \
-    LANGUAGE=ru_UA:ru:en \
-    LC_ALL=ru_UA.UTF-8 \
+    TZ="${TZ}" \
+    LANG="${LOCALE}" \
+    LANGUAGE="${LOCALE}" \
+    LC_ALL="${LOCALE}" \
     DISPLAY=:99 \
     CHROME_BIN=/usr/bin/google-chrome \
     CHROMEDRIVER=/usr/bin/chromedriver \
     DBUS_SESSION_BUS_ADDRESS=/dev/null
 
-# Базовые пакеты, локали, шрифты, dumb-init, Xvfb и утилиты
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
     ca-certificates curl unzip gnupg dumb-init jq locales tzdata \
     fonts-noto fonts-liberation fonts-dejavu-core \
     libnss3 libasound2 libxss1 libgbm1 libx11-xcb1 xvfb; \
-    sed -i 's/# ru_UA.UTF-8/ru_UA.UTF-8/' /etc/locale.gen; \
+    sed -i 's/# ru_UA.UTF-8/ru_UA.UTF-8/' /etc/locale.gen || true; \
+    if [ "${LOCALE}" != "ru_UA.UTF-8" ]; then \
+    sed -i "s/# ${LOCALE}/${LOCALE}/" /etc/locale.gen || true; \
+    fi; \
     locale-gen; \
     rm -rf /var/lib/apt/lists/*
 
-# -------------------------
-# Google Chrome: APT по паттерну или точный .deb
-# -------------------------
+# Google Chrome: APT by pattern or exact .deb
 RUN set -eux; \
     curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-linux.gpg; \
     echo "deb [signed-by=/usr/share/keyrings/google-linux.gpg arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
@@ -69,11 +73,7 @@ RUN set -eux; \
     fi; \
     rm -rf /var/lib/apt/lists/*
 
-# -------------------------
-# Chromedriver из Chrome-for-Testing:
-# - если передан DRIVER_VERSION -> ставим её (точное совпадение)
-# - иначе подбираем последнюю known-good в той же MAJOR-ветке Chrome
-# -------------------------
+# Chromedriver from Chrome-for-Testing
 RUN set -eux; \
     CHROME_VERSION="$(google-chrome --version | awk '{print $3}')" ; \
     CHROME_MAJOR="${CHROME_VERSION%%.*}" ; \
@@ -99,12 +99,9 @@ RUN set -eux; \
     install -m 0755 /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver; \
     rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64 /tmp/versions.json
 
-# (опционально) Корпоративные политики
 # COPY static/policies.json /etc/opt/chrome/policies/managed/policies.json
 
-# -------------------------
-# VNC-стек (только если ENABLE_VNC=1)
-# -------------------------
+# VNC stack (optional)
 RUN set -eux; \
     if [ "$ENABLE_VNC" = "1" ]; then \
     apt-get update; \
@@ -112,26 +109,18 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     fi
 
-# -------------------------
-# Копируем devtools-бинарь
-# -------------------------
 COPY --from=devtools-builder /out/devtools /usr/local/bin/devtools
 
-# Пользователь (как в старом)
-RUN useradd -m -s /bin/bash selenium && chown -R selenium:selenium /home/selenium /etc/opt/chrome || true
+RUN useradd -m -s /bin/bash selenium && \
+    chown -R selenium:selenium /home/selenium /etc/opt/chrome || true
 
-# Скрипты (как в старом)
 COPY scripts/entrypoint.sh /entrypoint.sh
 COPY scripts/xvfb-start.sh /usr/local/bin/xvfb-start
 RUN chmod +x /entrypoint.sh /usr/local/bin/xvfb-start
 
-# -------------------------
-# Обёртка: стартуем devtools и затем ваш entrypoint.sh
-# -------------------------
 RUN cat >/usr/local/bin/start-with-devtools.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-/usr/local/bin/devtools -listen :7070 &
 exec /entrypoint.sh
 EOF
 RUN chmod +x /usr/local/bin/start-with-devtools.sh
