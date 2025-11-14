@@ -54,24 +54,11 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # Google Chrome: APT by pattern or exact .deb
-RUN set -eux; \
-    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-linux.gpg; \
-    echo "deb [signed-by=/usr/share/keyrings/google-linux.gpg arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
-    > /etc/apt/sources.list.d/google-chrome.list; \
-    apt-get update; \
-    RESOLVED=""; \
-    if [ -n "$CHROME_APT_PATTERN" ]; then \
-    RESOLVED="$(apt-cache madison google-chrome-stable | awk '{print $3}' | grep -E "^${CHROME_APT_PATTERN}$" | head -n1 || true)"; \
-    fi; \
-    if [ -n "$RESOLVED" ]; then \
-    echo "Installing google-chrome-stable=${RESOLVED} from APT"; \
-    apt-get install -y --no-install-recommends google-chrome-stable="${RESOLVED}"; \
-    else \
-    echo "APT has no match; fetching exact .deb ${CHROME_VERSION}"; \
-    curl -fSL "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_amd64.deb" -o /tmp/chrome.deb; \
-    apt-get install -y --no-install-recommends /tmp/chrome.deb || (dpkg -i /tmp/chrome.deb || true && apt-get -f install -y); \
-    rm -f /tmp/chrome.deb; \
-    fi; \
+COPY scripts/install-chrome.sh /usr/local/bin/install-chrome
+RUN chmod +x /usr/local/bin/install-chrome && \
+    CHROME_VERSION="${CHROME_VERSION}" \
+    CHROME_APT_PATTERN="${CHROME_APT_PATTERN}" \
+    /usr/local/bin/install-chrome && \
     rm -rf /var/lib/apt/lists/*
 
 COPY scripts/install-chromedriver.sh /usr/local/bin/install-chromedriver
