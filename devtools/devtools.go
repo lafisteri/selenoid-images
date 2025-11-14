@@ -59,7 +59,7 @@ func browser(w http.ResponseWriter, r *http.Request) {
 	u, err := getBrowserWebSocketUrl(r.Context())
 	if err != nil {
 		log.Printf("[BROWSER_URL_ERROR] [%v]", err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, "DevTools endpoint not available", http.StatusBadGateway)
 		return
 	}
 	log.Printf("[BROWSER] [%s]", u.String())
@@ -75,7 +75,7 @@ func page(w http.ResponseWriter, r *http.Request) {
 	u, err := getPageWebSocketUrl(r.Context(), targetId)
 	if err != nil {
 		log.Printf("[PAGE_URL_ERROR] [%v]", err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, "DevTools endpoint not available", http.StatusBadGateway)
 		return
 	}
 	log.Printf("[PAGE] [%s]", u.String())
@@ -86,7 +86,7 @@ func protocol(w http.ResponseWriter, r *http.Request) {
 	h, err := devtoolsHost()
 	if err != nil {
 		log.Printf("[DEVTOOLS_HOST_ERROR] [%v]", err)
-		http.Error(w, fmt.Sprintf("Failed to detect devtools host: %v", err), http.StatusInternalServerError)
+		http.Error(w, "DevTools endpoint not available", http.StatusBadGateway)
 		return
 	}
 	u := &url.URL{Host: h, Scheme: "http", Path: "/json/protocol"}
