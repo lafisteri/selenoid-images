@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/mafredri/cdp/devtool"
 	"log"
@@ -10,34 +11,37 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
-	devtoolsBaseDir = "/tmp"
-	slash           = "/"
+	devtoolsBaseDir        = "/tmp"
+	slash                  = "/"
+	defaultDevtoolsHost    = "127.0.0.1:9222"
+	devtoolsRequestTimeout = 5 * time.Second
 )
 
-var (
-	defaultDevtoolsHost = "127.0.0.1:9222"
-	android             bool
-)
+func parseListen() string {
+	listen := flag.String("listen", ":7070", "address to listen on")
+	flag.Parse()
+	return *listen
+}
 
 func main() {
-	listen := ":7070"
-	for i := 0; i < len(os.Args); i++ {
-		if os.Args[i] == "-listen" && i+1 < len(os.Args) {
-			listen = os.Args[i+1]
-		}
-		if os.Args[i] == "-android" {
-			android = true
-		}
-	}
+	listen := parseListen()
 	log.Printf("[INIT] [Listening on %s]", listen)
-	log.Fatal(http.ListenAndServe(listen, root()))
+
+	server := &http.Server{
+		Addr:              listen,
+		Handler:           root(),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	log.Fatal(server.ListenAndServe())
 }
 
 func root() http.Handler {
@@ -105,7 +109,9 @@ func proxyWebSocket(w http.ResponseWriter, r *http.Request, u *url.URL) {
 }
 
 func getBrowserWebSocketUrl() (*url.URL, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), devtoolsRequestTimeout)
+	defer cancel()
+
 	h, err := devtoolsHost()
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect devtools port: %v", err)
@@ -123,7 +129,9 @@ func getBrowserWebSocketUrl() (*url.URL, error) {
 }
 
 func getPageWebSocketUrl(targetId string) (*url.URL, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), devtoolsRequestTimeout)
+	defer cancel()
+
 	h, err := devtoolsHost()
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect devtools port: %v", err)
@@ -146,21 +154,7 @@ func getPageWebSocketUrl(targetId string) (*url.URL, error) {
 }
 
 func devtoolsHost() (string, error) {
-	if android {
-		return androidDevtoolsHost()
-	}
 	return detectDevtoolsHost(devtoolsBaseDir), nil
-}
-
-func androidDevtoolsHost() (string, error) {
-	const androidDevtoolsPort = 9333
-	cmd := exec.Command("adb", "forward",
-		fmt.Sprintf("tcp:%d", androidDevtoolsPort),
-		"localabstract:chrome_devtools_remote")
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to forward devtools port: %v", err)
-	}
-	return fmt.Sprintf("localhost:%d", androidDevtoolsPort), nil
 }
 
 func detectDevtoolsHost(baseDir string) string {
