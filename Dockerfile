@@ -73,31 +73,9 @@ RUN set -eux; \
     fi; \
     rm -rf /var/lib/apt/lists/*
 
-# Chromedriver from Chrome-for-Testing
-RUN set -eux; \
-    CHROME_VERSION="$(google-chrome --version | awk '{print $3}')" ; \
-    CHROME_MAJOR="${CHROME_VERSION%%.*}" ; \
-    curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json -o /tmp/versions.json; \
-    if [ -n "${DRIVER_VERSION}" ]; then \
-    echo "Using requested DRIVER_VERSION=${DRIVER_VERSION}"; \
-    DRIVER_URL="$(jq -r --arg v "${DRIVER_VERSION}" \
-    '.versions[] | select(.version==$v) | .downloads.chromedriver[] | select(.platform=="linux64") | .url' \
-    /tmp/versions.json)"; \
-    test -n "$DRIVER_URL"; \
-    else \
-    echo "Picking latest known-good for MAJOR=${CHROME_MAJOR}"; \
-    DRIVER_VERSION="$(jq -r --arg m "$CHROME_MAJOR" \
-    '.versions | map(select(.version | startswith($m+"."))) | map(.version) | last' \
-    /tmp/versions.json)"; \
-    test -n "$DRIVER_VERSION"; \
-    DRIVER_URL="$(jq -r --arg v "$DRIVER_VERSION" \
-    '.versions[] | select(.version==$v) | .downloads.chromedriver[] | select(.platform=="linux64") | .url' \
-    /tmp/versions.json)"; \
-    fi; \
-    curl -fsSL -o /tmp/chromedriver.zip "$DRIVER_URL"; \
-    unzip -q /tmp/chromedriver.zip -d /tmp; \
-    install -m 0755 /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver; \
-    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64 /tmp/versions.json
+COPY scripts/install-chromedriver.sh /usr/local/bin/install-chromedriver
+RUN chmod +x /usr/local/bin/install-chromedriver && \
+    /usr/local/bin/install-chromedriver "${DRIVER_VERSION}"
 
 # COPY static/policies.json /etc/opt/chrome/policies/managed/policies.json
 
