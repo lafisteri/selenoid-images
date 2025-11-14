@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/mafredri/cdp/devtool"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -15,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mafredri/cdp/devtool"
 )
 
 const (
@@ -55,7 +56,7 @@ func root() http.Handler {
 }
 
 func browser(w http.ResponseWriter, r *http.Request) {
-	u, err := getBrowserWebSocketUrl()
+	u, err := getBrowserWebSocketUrl(r.Context())
 	if err != nil {
 		log.Printf("[BROWSER_URL_ERROR] [%v]", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -71,7 +72,7 @@ func page(w http.ResponseWriter, r *http.Request) {
 	if len(fragments) == 3 {
 		targetId = fragments[2]
 	}
-	u, err := getPageWebSocketUrl(targetId)
+	u, err := getPageWebSocketUrl(r.Context(), targetId)
 	if err != nil {
 		log.Printf("[PAGE_URL_ERROR] [%v]", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -108,8 +109,8 @@ func proxyWebSocket(w http.ResponseWriter, r *http.Request, u *url.URL) {
 	}).ServeHTTP(w, r)
 }
 
-func getBrowserWebSocketUrl() (*url.URL, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), devtoolsRequestTimeout)
+func getBrowserWebSocketUrl(parent context.Context) (*url.URL, error) {
+	ctx, cancel := context.WithTimeout(parent, devtoolsRequestTimeout)
 	defer cancel()
 
 	h, err := devtoolsHost()
@@ -128,8 +129,8 @@ func getBrowserWebSocketUrl() (*url.URL, error) {
 	return nil, errors.New("browser websocket URL information not found")
 }
 
-func getPageWebSocketUrl(targetId string) (*url.URL, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), devtoolsRequestTimeout)
+func getPageWebSocketUrl(parent context.Context, targetId string) (*url.URL, error) {
+	ctx, cancel := context.WithTimeout(parent, devtoolsRequestTimeout)
 	defer cancel()
 
 	h, err := devtoolsHost()
