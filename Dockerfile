@@ -43,17 +43,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-    ca-certificates curl unzip gnupg dumb-init jq locales tzdata \
-    fonts-noto fonts-liberation fonts-dejavu-core \
-    libnss3 libasound2 libxss1 libgbm1 libx11-xcb1 xvfb; \
-    sed -i 's/# ru_UA.UTF-8/ru_UA.UTF-8/' /etc/locale.gen || true; \
-    if [ "${LOCALE}" != "ru_UA.UTF-8" ]; then \
-    sed -i "s/# ${LOCALE}/${LOCALE}/" /etc/locale.gen || true; \
+      ca-certificates curl unzip gnupg dumb-init jq locales tzdata \
+      fonts-noto fonts-liberation fonts-dejavu-core \
+      libnss3 libasound2 libxss1 libgbm1 libx11-xcb1 xvfb; \
+    # enable requested locale
+    if ! grep -Eq "^${LOCALE}[[:space:]]+UTF-8" /etc/locale.gen; then \
+      echo "${LOCALE} UTF-8" >> /etc/locale.gen; \
     fi; \
     locale-gen; \
     rm -rf /var/lib/apt/lists/*
 
-# Google Chrome: APT by pattern or exact .deb
 COPY scripts/install-chrome.sh /usr/local/bin/install-chrome
 RUN chmod +x /usr/local/bin/install-chrome && \
     CHROME_VERSION="${CHROME_VERSION}" \
@@ -67,12 +66,11 @@ RUN chmod +x /usr/local/bin/install-chromedriver && \
 
 # COPY static/policies.json /etc/opt/chrome/policies/managed/policies.json
 
-# VNC stack (optional)
 RUN set -eux; \
-    if [ "$ENABLE_VNC" = "1" ]; then \
-    apt-get update; \
-    apt-get install -y --no-install-recommends x11vnc fluxbox websockify novnc; \
-    rm -rf /var/lib/apt/lists/*; \
+    if [ "${ENABLE_VNC}" = "1" ]; then \
+      apt-get update; \
+      apt-get install -y --no-install-recommends x11vnc fluxbox websockify novnc; \
+      rm -rf /var/lib/apt/lists/*; \
     fi
 
 COPY --from=devtools-builder /out/devtools /usr/local/bin/devtools
