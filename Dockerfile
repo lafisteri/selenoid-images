@@ -37,7 +37,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:99 \
     CHROME_BIN=/usr/bin/google-chrome \
     CHROMEDRIVER=/usr/bin/chromedriver \
-    DBUS_SESSION_BUS_ADDRESS=/dev/null
+    DBUS_SESSION_BUS_ADDRESS=/dev/null \
+    ENABLE_VNC="${ENABLE_VNC}"
 
 RUN set -eux; \
     apt-get update; \
