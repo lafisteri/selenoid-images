@@ -1,0 +1,3 @@
+ignored:
+  - DL3008  # don't require pinning versions in apt-get install
+  - DL3015  # avoid additional packages installed
