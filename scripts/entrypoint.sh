@@ -7,19 +7,25 @@ fi
 
 /usr/local/bin/devtools -listen :7070 &
 
-/usr/bin/chromedriver \
-  --port=4444 \
-  --url-base=/ \
-  --whitelisted-ips= \
-  --allowed-ips= \
-  --verbose \
-  --log-path=/tmp/chromedriver.log \
-  --allowed-origins='*' \
-  --append-log \
-  --headless=new \
-  --disable-gpu \
-  --no-sandbox \
-  --disable-dev-shm-usage \
-  --remote-allow-origins="*" &
+chromedriver_args=(
+  --port=4444
+  --url-base=/
+  --whitelisted-ips=
+  --allowed-ips=
+  --verbose
+  --log-path=/tmp/chromedriver.log
+  --allowed-origins='*'
+  --append-log
+  --disable-gpu
+  --no-sandbox
+  --disable-dev-shm-usage
+  --remote-allow-origins="*"
+)
+
+if [[ "${ENABLE_VNC:-0}" != "1" ]]; then
+  chromedriver_args+=(--headless=new)
+fi
+
+/usr/bin/chromedriver "${chromedriver_args[@]}" &
 
 wait -n
