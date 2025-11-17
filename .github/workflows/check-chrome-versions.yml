@@ -1,0 +1,91 @@
+name: Check latest Chrome & Chromedriver versions
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Get latest Stable version from Chrome for Testing
+        id: latest
+        run: |
+          set -e
+
+          URL="https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
+
+          echo "Fetching latest Stable version from: $URL"
+          LATEST_VERSION=$(curl -sSL "$URL" | jq -r '.channels.Stable.version')
+
+          if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
+            echo "Failed to fetch latest version"
+            exit 1
+          fi
+
+          # Наш ключ и версии для Dockerfile
+          VERSION_KEY="$LATEST_VERSION"
+          CHROME_DEB_VERSION="${LATEST_VERSION}-1"
+          CHROMEDRIVER_VERSION="$LATEST_VERSION"
+
+          echo "Latest Stable version: $LATEST_VERSION"
+          echo "chrome_deb_version:   $CHROME_DEB_VERSION"
+          echo "chromedriver_version: $CHROMEDRIVER_VERSION"
+
+          echo "version_key=$VERSION_KEY" >> "$GITHUB_OUTPUT"
+          echo "chrome_deb_version=$CHROME_DEB_VERSION" >> "$GITHUB_OUTPUT"
+          echo "chromedriver_version=$CHROMEDRIVER_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure chrome-versions.json exists
+        run: |
+          if [ ! -f chrome-versions.json ]; then
+            echo "{}" > chrome-versions.json
+          fi
+
+      - name: Check if version already in chrome-versions.json
+        id: check_present
+        run: |
+          set -e
+          VERSION_KEY="${{ steps.latest.outputs.version_key }}"
+
+          EXISTS=$(jq -e --arg v "$VERSION_KEY" 'has($v)' chrome-versions.json > /dev/null 2>&1 && echo "yes" || echo "no")
+
+          echo "exists=$EXISTS" >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION_KEY present? $EXISTS"
+
+      - name: Add new pending version to chrome-versions.json
+        if: steps.check_present.outputs.exists == 'no'
+        run: |
+          set -e
+          VERSION_KEY="${{ steps.latest.outputs.version_key }}"
+          CHROME_DEB_VERSION="${{ steps.latest.outputs.chrome_deb_version }}"
+          CHROMEDRIVER_VERSION="${{ steps.latest.outputs.chromedriver_version }}"
+
+          echo "Adding new version $VERSION_KEY to chrome-versions.json"
+
+          UPDATED_JSON=$(jq \
+            --arg v "$VERSION_KEY" \
+            --arg chrome "$CHROME_DEB_VERSION" \
+            --arg driver "$CHROMEDRIVER_VERSION" \
+            '. + {($v): {chrome_deb_version: $chrome, chromedriver_version: $driver, status: "pending"}}' \
+            chrome-versions.json)
+
+          echo "$UPDATED_JSON" > chrome-versions.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add chrome-versions.json
+          git commit -m "chore: add Chrome $VERSION_KEY (pending)"
+          git push
+
+      - name: Nothing to update
+        if: steps.check_present.outputs.exists == 'yes'
+        run: |
+          echo "Version already exists in chrome-versions.json, nothing to do."

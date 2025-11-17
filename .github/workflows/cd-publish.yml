@@ -1,0 +1,133 @@
+name: CD - Build & publish vnc_chrome image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_key:
+        description: 'Chrome version key from chrome-versions.json (e.g. 142.0.7444.162)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Docker image tag (default: same as version_key)'
+        required: false
+        type: string
+
+env:
+  DOCKERHUB_REPOSITORY: lafisteri/vnc_chrome
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Resolve image tag
+        id: vars
+        run: |
+          VERSION_KEY="${{ inputs.version_key }}"
+          IMAGE_TAG="${{ inputs.image_tag }}"
+
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG="$VERSION_KEY"
+          fi
+
+          echo "version_key=$VERSION_KEY" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Read versions from chrome-versions.json
+        id: read_json
+        run: |
+          set -e
+          VERSION_KEY="${{ steps.vars.outputs.version_key }}"
+
+          if [ ! -f chrome-versions.json ]; then
+            echo "chrome-versions.json not found"
+            exit 1
+          fi
+
+          # Проверяем, что версия существует
+          EXISTS=$(jq -e --arg v "$VERSION_KEY" 'has($v)' chrome-versions.json > /dev/null 2>&1 && echo "yes" || echo "no")
+          if [ "$EXISTS" != "yes" ]; then
+            echo "Version $VERSION_KEY not found in chrome-versions.json"
+            exit 1
+          fi
+
+          CHROME_DEB_VERSION=$(jq -r --arg v "$VERSION_KEY" '.[$v].chrome_deb_version' chrome-versions.json)
+          CHROMEDRIVER_VERSION=$(jq -r --arg v "$VERSION_KEY" '.[$v].chromedriver_version' chrome-versions.json)
+          STATUS=$(jq -r --arg v "$VERSION_KEY" '.[$v].status // "unknown"' chrome-versions.json)
+
+          echo "chrome_deb_version=$CHROME_DEB_VERSION" >> "$GITHUB_OUTPUT"
+          echo "chromedriver_version=$CHROMEDRIVER_VERSION" >> "$GITHUB_OUTPUT"
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+          echo "Version:   $VERSION_KEY"
+          echo "Chrome:    $CHROME_DEB_VERSION"
+          echo "Driver:    $CHROMEDRIVER_VERSION"
+          echo "Status:    $STATUS"
+
+      # (опционально) не даём публиковать уже published
+      - name: Fail if already published
+        if: steps.read_json.outputs.status == 'published'
+        run: |
+          echo "Version status is 'published' – refusing to republish."
+          exit 1
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Make images script executable
+        run: chmod +x ./images
+
+      - name: Build image via ./images
+        run: |
+          ./images chrome \
+            -b "${{ steps.read_json.outputs.chrome_deb_version }}" \
+            -d "${{ steps.read_json.outputs.chromedriver_version }}" \
+            -t "${{ env.DOCKERHUB_REPOSITORY }}:${{ steps.vars.outputs.image_tag }}" \
+            vnc_chrome
+
+      - name: Push Docker image
+        run: |
+          docker push "${{ env.DOCKERHUB_REPOSITORY }}:${{ steps.vars.outputs.image_tag }}"
+
+      - name: Tag and push latest
+        run: |
+          docker tag "${{ env.DOCKERHUB_REPOSITORY }}:${{ steps.vars.outputs.image_tag }}" \
+                     "${{ env.DOCKERHUB_REPOSITORY }}:latest"
+          docker push "${{ env.DOCKERHUB_REPOSITORY }}:latest"
+
+      - name: Update status to published in chrome-versions.json
+        run: |
+          set -e
+          VERSION_KEY="${{ steps.vars.outputs.version_key }}"
+
+          UPDATED_JSON=$(jq \
+            --arg v "$VERSION_KEY" \
+            '.[$v].status = "published"' \
+            chrome-versions.json)
+
+          echo "$UPDATED_JSON" > chrome-versions.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add chrome-versions.json
+          git commit -m "chore: mark Chrome $VERSION_KEY as published"
+          git push
+
+      - name: Create git tag for this version
+        run: |
+          VERSION_KEY="${{ steps.vars.outputs.version_key }}"
+          IMAGE_TAG="${{ steps.vars.outputs.image_tag }}"
+          TAG_NAME="chrome-${IMAGE_TAG}"
+
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
+
+          echo "Created git tag: $TAG_NAME"
