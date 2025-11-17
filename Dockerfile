@@ -43,13 +43,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      ca-certificates curl unzip gnupg dumb-init jq locales tzdata \
-      fonts-noto fonts-liberation fonts-dejavu-core \
-      libnss3 libasound2 libxss1 libgbm1 libx11-xcb1 xvfb; \
-    # enable requested locale
-    if ! grep -Eq "^${LOCALE}[[:space:]]+UTF-8" /etc/locale.gen; then \
-      echo "${LOCALE} UTF-8" >> /etc/locale.gen; \
-    fi; \
+    ca-certificates curl unzip gnupg dumb-init jq locales tzdata \
+    fonts-noto fonts-liberation fonts-dejavu-core \
+    libnss3 libasound2 libxss1 libgbm1 libx11-xcb1 xvfb; \
+    echo "${LOCALE} UTF-8" > /etc/locale.gen; \
     locale-gen; \
     rm -rf /var/lib/apt/lists/*
 
@@ -68,9 +65,9 @@ RUN chmod +x /usr/local/bin/install-chromedriver && \
 
 RUN set -eux; \
     if [ "${ENABLE_VNC}" = "1" ]; then \
-      apt-get update; \
-      apt-get install -y --no-install-recommends x11vnc fluxbox websockify novnc; \
-      rm -rf /var/lib/apt/lists/*; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends x11vnc fluxbox websockify novnc; \
+    rm -rf /var/lib/apt/lists/*; \
     fi
 
 COPY --from=devtools-builder /out/devtools /usr/local/bin/devtools
@@ -82,13 +79,6 @@ COPY scripts/entrypoint.sh /entrypoint.sh
 COPY scripts/xvfb-start.sh /usr/local/bin/xvfb-start
 RUN chmod +x /entrypoint.sh /usr/local/bin/xvfb-start
 
-RUN cat >/usr/local/bin/start-with-devtools.sh <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-exec /entrypoint.sh
-EOF
-RUN chmod +x /usr/local/bin/start-with-devtools.sh
-
 USER selenium
 
 EXPOSE 4444 5900 7900 7070
@@ -96,4 +86,4 @@ EXPOSE 4444 5900 7900 7070
 HEALTHCHECK --interval=20s --timeout=3s --retries=3 CMD curl -fsS http://127.0.0.1:4444/status || exit 1
 
 ENTRYPOINT ["/usr/bin/dumb-init","--"]
-CMD ["/usr/local/bin/start-with-devtools.sh"]
+CMD ["/entrypoint.sh"]
