@@ -43,13 +43,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-    ca-certificates curl unzip gnupg dumb-init jq locales tzdata \
-    fonts-noto fonts-liberation fonts-dejavu-core \
-    libnss3 libasound2 libxss1 libgbm1 libx11-xcb1 xvfb; \
+      ca-certificates curl unzip gnupg dumb-init jq locales tzdata \
+      fonts-noto fonts-liberation fonts-dejavu-core \
+      libnss3 libasound2 libxss1 libgbm1 libx11-xcb1 xvfb; \
     echo "${LOCALE} UTF-8" > /etc/locale.gen; \
     locale-gen; \
     if [ "${ENABLE_VNC}" = "1" ]; then \
-    apt-get install -y --no-install-recommends x11vnc fluxbox websockify novnc; \
+      apt-get install -y --no-install-recommends x11vnc fluxbox websockify novnc; \
     fi; \
     rm -rf /var/lib/apt/lists/*
 
@@ -64,13 +64,14 @@ COPY scripts/install-chromedriver.sh /usr/local/bin/install-chromedriver
 RUN chmod +x /usr/local/bin/install-chromedriver && \
     /usr/local/bin/install-chromedriver "${DRIVER_VERSION}"
 
-# COPY static/policies.json /etc/opt/chrome/policies/managed/policies.json
+LABEL chrome.version="${CHROME_VERSION}" \
+      chromedriver.version="${DRIVER_VERSION}"
 
 COPY --from=devtools-builder /out/devtools /usr/local/bin/devtools
 
 RUN useradd -m -s /bin/bash selenium && \
     chown -R selenium:selenium /home/selenium /etc/opt/chrome || true && \
-    touch /var/log/vnc-stack.log && chown selenium:selenium /var/log/vnc-stack.log
+    mkdir -p /var/log && touch /var/log/vnc-stack.log && chown selenium:selenium /var/log/vnc-stack.log
 
 COPY scripts/entrypoint.sh /entrypoint.sh
 COPY scripts/xvfb-start.sh /usr/local/bin/xvfb-start
