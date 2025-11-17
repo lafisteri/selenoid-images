@@ -48,6 +48,9 @@ RUN set -eux; \
     libnss3 libasound2 libxss1 libgbm1 libx11-xcb1 xvfb; \
     echo "${LOCALE} UTF-8" > /etc/locale.gen; \
     locale-gen; \
+    if [ "${ENABLE_VNC}" = "1" ]; then \
+    apt-get install -y --no-install-recommends x11vnc fluxbox websockify novnc; \
+    fi; \
     rm -rf /var/lib/apt/lists/*
 
 COPY scripts/install-chrome.sh /usr/local/bin/install-chrome
@@ -62,13 +65,6 @@ RUN chmod +x /usr/local/bin/install-chromedriver && \
     /usr/local/bin/install-chromedriver "${DRIVER_VERSION}"
 
 # COPY static/policies.json /etc/opt/chrome/policies/managed/policies.json
-
-RUN set -eux; \
-    if [ "${ENABLE_VNC}" = "1" ]; then \
-    apt-get update; \
-    apt-get install -y --no-install-recommends x11vnc fluxbox websockify novnc; \
-    rm -rf /var/lib/apt/lists/*; \
-    fi
 
 COPY --from=devtools-builder /out/devtools /usr/local/bin/devtools
 
