@@ -1,4 +1,4 @@
-name: CI - images build check
+name: CI - images build & lint
 
 on:
   push:
@@ -13,6 +13,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@v2
+        with:
+          scandir: ./scripts
+
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
 
       - name: Make images script executable
         run: chmod +x ./images
