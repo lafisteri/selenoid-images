@@ -73,7 +73,8 @@ RUN set -eux; \
 COPY --from=devtools-builder /out/devtools /usr/local/bin/devtools
 
 RUN useradd -m -s /bin/bash selenium && \
-    chown -R selenium:selenium /home/selenium /etc/opt/chrome || true
+    chown -R selenium:selenium /home/selenium /etc/opt/chrome || true && \
+    touch /var/log/vnc-stack.log && chown selenium:selenium /var/log/vnc-stack.log
 
 COPY scripts/entrypoint.sh /entrypoint.sh
 COPY scripts/xvfb-start.sh /usr/local/bin/xvfb-start
