@@ -8,5 +8,10 @@
     "chrome_deb_version": "142.0.7444.162-1",
     "chromedriver_version": "142.0.7444.162",
     "status": "pending"
+  },
+  "142.0.7444.175": {
+    "chrome_deb_version": "142.0.7444.175-1",
+    "chromedriver_version": "142.0.7444.175",
+    "status": "pending"
   }
 }
