@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version_key:
-        description: 'Chrome version key from chrome-versions.json (e.g. 142.0.7444.162)'
+        description: 'Chrome version key from chrome-versions.json (e.g. 142.0.xxxx.xxx)'
         required: true
         type: string
       image_tag:
